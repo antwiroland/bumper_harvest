@@ -1,0 +1,263 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(auto()) @map("_id") @db.ObjectId
+  email         String    @unique
+  password      String
+  name          String
+  phone         String?
+  role          Role      @default(USER)
+  emailVerified DateTime?
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  wallet        Wallet?
+  subscriptions Subscription[]
+  purchases     PackagePurchase[]
+  accounts      Account[]
+  sessions      Session[]
+
+  @@index([role])
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+model Wallet {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String   @unique @db.ObjectId
+  balance   Float    @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user         User                @relation(fields: [userId], references: [id])
+  transactions WalletTransaction[]
+}
+
+model WalletTransaction {
+  id          String          @id @default(auto()) @map("_id") @db.ObjectId
+  walletId    String          @db.ObjectId
+  type        TransactionType
+  amount      Float
+  description String
+  reference   String?
+  createdAt   DateTime        @default(now())
+
+  wallet Wallet @relation(fields: [walletId], references: [id])
+
+  @@index([walletId])
+  @@index([createdAt])
+}
+
+enum TransactionType {
+  CREDIT
+  DEBIT
+}
+
+model Category {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  name            String
+  description     String?
+  packagePrice    Float
+  subscriptionFee Float
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  packages      Package[]
+  subscriptions Subscription[]
+}
+
+model Subscription {
+  id         String             @id @default(auto()) @map("_id") @db.ObjectId
+  userId     String             @db.ObjectId
+  categoryId String             @db.ObjectId
+  status     SubscriptionStatus @default(ACTIVE)
+  startDate  DateTime           @default(now())
+  endDate    DateTime?
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime           @updatedAt
+
+  user     User     @relation(fields: [userId], references: [id])
+  category Category @relation(fields: [categoryId], references: [id])
+
+  @@unique([userId, categoryId])
+  @@index([userId, status])
+  @@index([categoryId, status])
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  EXPIRED
+  CANCELLED
+}
+
+model Package {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  categoryId  String   @db.ObjectId
+  name        String
+  description String?
+  imageUrl    String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  category  Category          @relation(fields: [categoryId], references: [id])
+  products  Product[]
+  purchases PackagePurchase[]
+}
+
+model Product {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  packageId    String   @db.ObjectId
+  name         String
+  quantity     Int
+  costPrice    Float
+  sellingPrice Float
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  package     Package              @relation(fields: [packageId], references: [id])
+  salesRecord ProductSalesRecord[]
+}
+
+model PackagePurchase {
+  id                 String         @id @default(auto()) @map("_id") @db.ObjectId
+  userId             String         @db.ObjectId
+  packageId          String         @db.ObjectId
+  purchasePrice      Float
+  expectedProfit     Float
+  status             PurchaseStatus @default(ACTIVE)
+  sellingWindowStart DateTime       @default(now())
+  sellingWindowEnd   DateTime
+  completionPercent  Float          @default(0)
+  settledAt          DateTime?
+  payoutAmount       Float?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  user         User                 @relation(fields: [userId], references: [id])
+  package      Package              @relation(fields: [packageId], references: [id])
+  salesRecords ProductSalesRecord[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([sellingWindowEnd])
+  @@index([userId, status])
+  @@index([status, sellingWindowEnd])
+  @@index([packageId, status])
+}
+
+enum PurchaseStatus {
+  ACTIVE
+  SETTLED
+  REFUNDED
+}
+
+model ProductSalesRecord {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  purchaseId    String   @db.ObjectId
+  productId     String   @db.ObjectId
+  totalQuantity Int
+  soldQuantity  Int      @default(0)
+  lastUpdatedBy String?  @db.ObjectId
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  purchase PackagePurchase @relation(fields: [purchaseId], references: [id])
+  product  Product         @relation(fields: [productId], references: [id])
+
+  @@unique([purchaseId, productId])
+  @@index([purchaseId, updatedAt])
+}
+
+model SettlementLog {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  purchaseId    String   @db.ObjectId
+  status        String
+  payout        Float
+  commission    Float
+  completionPct Float
+  processedAt   DateTime @default(now())
+
+  @@index([processedAt])
+  @@index([status, processedAt])
+  @@index([purchaseId, processedAt])
+}
+
+model PaymentTransaction {
+  id        String        @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String        @db.ObjectId
+  type      PaymentType
+  amount    Float
+  status    PaymentStatus @default(PENDING)
+  reference String        @unique
+  provider  String
+  metadata  Json?
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  @@index([userId, status, createdAt])
+  @@index([reference, status])
+}
+
+enum PaymentType {
+  DEPOSIT
+  SUBSCRIPTION
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+model Account {
+  id                String  @id @default(auto()) @map("_id") @db.ObjectId
+  userId            String  @db.ObjectId
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  sessionToken String   @unique
+  userId       String   @db.ObjectId
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
